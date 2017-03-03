@@ -272,9 +272,6 @@ namespace Microsoft.EntityFrameworkCore.Query
         {
             Check.NotNull(querySource, nameof(querySource));
 
-            querySource
-                = (querySource as GroupJoinClause)?.JoinClause ?? querySource;
-
             SelectExpression selectExpression;
             return QueriesBySource.TryGetValue(querySource, out selectExpression)
                 ? selectExpression

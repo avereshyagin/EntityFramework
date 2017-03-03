@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Linq;
 using System.Linq.Expressions;
@@ -318,13 +319,15 @@ namespace Microsoft.EntityFrameworkCore.Query
             _navigationRewritingExpressionVisitorFactory
                 .Create(this).Rewrite(queryModel, parentQueryModel: null);
 
+            entityEqualityRewritingExpressionVisitor.Rewrite(queryModel);
+
             QueryCompilationContext.Logger
                 .LogDebug(
                     CoreEventId.OptimizedQueryModel,
                     () => CoreStrings.LogOptimizedQueryModel(Environment.NewLine, queryModel.Print()));
         }
 
-        private class NondeterministicResultCheckingVisitor : QueryModelVisitorBase
+        private class NondeterministicResultCheckingVisitor : RecursiveQueryModelVisitor
         {
             private const int QueryModelStringLengthLimit = 100;
             private readonly ILogger _logger;
@@ -334,9 +337,9 @@ namespace Microsoft.EntityFrameworkCore.Query
                 _logger = logger;
             }
 
-            public override void VisitQueryModel(QueryModel queryModel)
+            protected override void VisitResultOperators(ObservableCollection<ResultOperatorBase> resultOperators, QueryModel queryModel)
             {
-                if (queryModel.ResultOperators.Any(o => o is SkipResultOperator || o is TakeResultOperator)
+                if (resultOperators.Any(o => o is SkipResultOperator || o is TakeResultOperator)
                     && !queryModel.BodyClauses.OfType<OrderByClause>().Any())
                 {
                     _logger.LogWarning(
@@ -345,7 +348,7 @@ namespace Microsoft.EntityFrameworkCore.Query
                             queryModel.Print(removeFormatting: true, characterLimit: QueryModelStringLengthLimit)));
                 }
 
-                if (queryModel.ResultOperators.Any(o => o is FirstResultOperator)
+                if (resultOperators.Any(o => o is FirstResultOperator)
                     && !queryModel.BodyClauses.OfType<OrderByClause>().Any()
                     && !queryModel.BodyClauses.OfType<WhereClause>().Any())
                 {
@@ -355,24 +358,7 @@ namespace Microsoft.EntityFrameworkCore.Query
                             queryModel.Print(removeFormatting: true, characterLimit: QueryModelStringLengthLimit)));
                 }
 
-                queryModel.TransformExpressions(new RecursiveQueryModelExpressionVisitor(this).Visit);
-            }
-
-            private class RecursiveQueryModelExpressionVisitor : ExpressionVisitorBase
-            {
-                private readonly NondeterministicResultCheckingVisitor _parentVisitor;
-
-                public RecursiveQueryModelExpressionVisitor(NondeterministicResultCheckingVisitor parentVisitor)
-                {
-                    _parentVisitor = parentVisitor;
-                }
-
-                protected override Expression VisitSubQuery(SubQueryExpression expression)
-                {
-                    _parentVisitor.VisitQueryModel(expression.QueryModel);
-
-                    return base.VisitSubQuery(expression);
-                }
+                base.VisitResultOperators(resultOperators, queryModel);
             }
         }
 

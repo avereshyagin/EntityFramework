@@ -2,10 +2,13 @@
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
 using System;
+using System.Linq;
 using System.Linq.Expressions;
 using JetBrains.Annotations;
 using Microsoft.EntityFrameworkCore.Utilities;
 using Remotion.Linq.Clauses;
+using Remotion.Linq.Clauses.Expressions;
+using Remotion.Linq.Clauses.ResultOperators;
 
 namespace Microsoft.EntityFrameworkCore.Query.Expressions
 {
@@ -88,7 +91,35 @@ namespace Microsoft.EntityFrameworkCore.Query.Expressions
         {
             Check.NotNull(querySource, nameof(querySource));
 
-            return _querySource == querySource;
+            return _querySource == PreProcessQuerySource(querySource);
+        }
+
+        protected virtual IQuerySource PreProcessQuerySource([NotNull] IQuerySource querySource)
+        {
+            Check.NotNull(querySource, nameof(querySource));
+
+            var newQuerySource = ExtractGroupJoinFromSelectManySubquery(querySource);
+
+            return (newQuerySource as GroupJoinClause)?.JoinClause ?? newQuerySource;
+        }
+
+        private IQuerySource ExtractGroupJoinFromSelectManySubquery(IQuerySource querySource)
+        {
+            if (querySource is AdditionalFromClause additionalFromClause)
+            {
+                var subQueryModel = (additionalFromClause.FromExpression as SubQueryExpression)?.QueryModel;
+                if (subQueryModel != null
+                    && !subQueryModel.BodyClauses.Any()
+                    && subQueryModel.ResultOperators.Count == 1
+                    && subQueryModel.ResultOperators[0] is DefaultIfEmptyResultOperator
+                    && (subQueryModel.SelectClause.Selector as QuerySourceReferenceExpression)?.ReferencedQuerySource == subQueryModel.MainFromClause
+                    && (subQueryModel.MainFromClause.FromExpression as QuerySourceReferenceExpression)?.ReferencedQuerySource is GroupJoinClause targetGroupJoin)
+                {
+                    return targetGroupJoin;
+                }
+            }
+
+            return querySource;
         }
 
         /// <summary>

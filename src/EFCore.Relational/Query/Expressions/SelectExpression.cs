@@ -251,7 +251,9 @@ namespace Microsoft.EntityFrameworkCore.Query.Expressions
         {
             Check.NotNull(querySource, nameof(querySource));
 
-            return _tables.Any(te => te.QuerySource == querySource || te.HandlesQuerySource(querySource));
+            var processedQuerySource = PreProcessQuerySource(querySource);
+
+            return _tables.Any(te => te.QuerySource == processedQuerySource || te.HandlesQuerySource(processedQuerySource));
         }
 
         /// <summary>

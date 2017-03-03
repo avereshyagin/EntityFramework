@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
@@ -11,12 +12,14 @@ using Microsoft.EntityFrameworkCore.Internal;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata.Internal;
 using Microsoft.EntityFrameworkCore.Query.Expressions;
+using Microsoft.EntityFrameworkCore.Query.Expressions.Internal;
 using Microsoft.EntityFrameworkCore.Query.ExpressionVisitors.Internal;
 using Microsoft.EntityFrameworkCore.Query.Internal;
 using Microsoft.EntityFrameworkCore.Query.ResultOperators.Internal;
 using Microsoft.EntityFrameworkCore.Query.Sql;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.EntityFrameworkCore.Utilities;
+using Remotion.Linq;
 using Remotion.Linq.Clauses;
 using Remotion.Linq.Clauses.Expressions;
 
@@ -71,7 +74,12 @@ namespace Microsoft.EntityFrameworkCore.Query.ExpressionVisitors
 
             var queryModelVisitor = (RelationalQueryModelVisitor)CreateQueryModelVisitor();
 
+            var queryModelMapping = new Dictionary<QueryModel, QueryModel>();
+            expression.QueryModel.PopulateQueryModelMapping(queryModelMapping);
+
             queryModelVisitor.VisitQueryModel(expression.QueryModel);
+
+            expression.QueryModel.RecreateQueryModelFromMapping(queryModelMapping);
 
             if (_querySource != null)
             {
@@ -127,6 +135,21 @@ namespace Microsoft.EntityFrameworkCore.Query.ExpressionVisitors
                     bindSubQueries: true);
 
             return base.VisitMethodCall(node);
+        }
+
+        protected override Expression VisitExtension(Expression node)
+        {
+            var nullConditionalExpression = node as NullConditionalExpression;
+            if (nullConditionalExpression != null)
+            {
+                Visit(nullConditionalExpression.AccessOperation);
+                Visit(nullConditionalExpression.Caller);
+                Visit(nullConditionalExpression.NullableCaller);
+
+                return node;
+            }
+
+            return base.VisitExtension(node);
         }
 
         /// <summary>
